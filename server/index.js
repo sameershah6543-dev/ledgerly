@@ -86,6 +86,12 @@ api.delete('/simple/products/:id', wrap((req) => deleteItem(Number(req.params.id
 api.get('/simple/products/:id/history', wrap((req) => Simple.stockHistory(Number(req.params.id))));
 api.post('/simple/restock', wrap((req) => Simple.restock(req.body, uname(req))));
 api.get('/simple/money', wrap(() => Simple.moneyList()));
+api.get('/simple/owed/:kind', wrap((req) => Simple.openList(req.params.kind === 'pay' ? 'pay' : 'receive')));
+api.post('/simple/settle', wrap((req) => Simple.settle(req.body, uname(req))));
+api.get('/simple/people', wrap((req) => Simple.people(req.query)));
+api.get('/simple/ledger', wrap((req) => Simple.ledger(req.query.name)));
+api.get('/simple/names', wrap(() => Simple.names()));
+api.delete('/simple/money/:type/:id', wrap((req) => Simple.deleteMoney(req.params.type, Number(req.params.id), uname(req))));
 api.post('/simple/clear-all', admin, wrap((req) => { if (req.body.confirm !== 'DELETE') fail('Type DELETE to confirm'); return Simple.clearAllData(); }));
 
 // ---------------- checks & backup ----------------

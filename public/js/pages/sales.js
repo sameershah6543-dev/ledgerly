@@ -19,20 +19,24 @@ export async function listPage(root, o) {
   $$('[data-p]', root).forEach((b) => { b.onclick = () => { key = b.dataset.p; remember(o.storeKey, key); $$('[data-p]', root).forEach((x) => x.classList.toggle('on', x === b)); load(); }; });
   await load();
 }
+// payment status badge for sales / expenses
+export const payBadge = (r, owedWord = 'Owes') => (r.status === 'paid' ? `<span class="badge ok">Paid</span>`
+  : `<span class="badge ${r.status === 'part' ? 'low' : 'out'}">${owedWord} ${money(r.due)}</span>`);
 export const stat = (label, value, sub, color) => `<div class="card stat"><div class="label"><span class="dot" style="background:${color}"></span>${label}</div><div class="value">${value}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
 
 export async function sales(root) {
   await listPage(root, {
-    title: 'Sales', sub: 'Everything you’ve sold. Your revenue and profit update automatically.', storeKey: 'sales-period',
+    title: 'Sales', sub: 'Everything you’ve sold. Your revenue and profit update automatically.', storeKey: 'sales-period', statCols: 4,
     actions: `<button class="btn primary" data-new>${icon('plus')} Record a sale</button>`, url: '/api/simple/sales', searchPh: 'Search product, customer, note…',
     stats: ({ summary: s }) => stat('Total sales', money(s.sales), `${s.count} sale${s.count === 1 ? '' : 's'}`, 'var(--primary)')
       + stat('Cost of products sold', money(s.cost), 'What those items cost you', 'var(--faint)')
-      + stat('Profit on sales', `<span class="${s.profit < 0 ? 'neg' : ''}">${money(s.profit)}</span>`, s.sales ? `${Math.round((s.profit / s.sales) * 100)}% margin` : '', 'var(--green)'),
-    table: ({ rows, summary: s }) => `<table class="t cards"><thead><tr><th>Date</th><th>Product</th><th class="r">Qty</th><th class="r">Sold for</th><th class="r">Cost</th><th class="r">Profit</th><th>Received in</th></tr></thead><tbody>
+      + stat('Profit on sales', `<span class="${s.profit < 0 ? 'neg' : ''}">${money(s.profit)}</span>`, s.sales ? `${Math.round((s.profit / s.sales) * 100)}% margin` : '', 'var(--green)')
+      + stat('Not received yet', money(s.due), s.due > 0 ? '<a href="#/owed?tab=receive">See who owes you →</a>' : 'Everything collected', 'var(--amber)'),
+    table: ({ rows, summary: s }) => `<table class="t cards"><thead><tr><th>Date</th><th>Product</th><th class="r">Qty</th><th class="r">Sold for</th><th class="r">Cost</th><th class="r">Profit</th><th>Payment</th></tr></thead><tbody>
       ${rows.map((r) => `<tr class="click" data-id="${r.id}"><td class="hide-m">${fdate(r.date)}</td>
-        <td class="lead strong">${esc(r.product)}<span class="sub"><span class="m-only">${fdate(r.date)} · ${qty(r.qty)} sold${r.customer || r.note ? ' · ' : ''}</span>${[r.customer, r.note].filter(Boolean).map(esc).join(' · ')}</span></td>
+        <td class="lead strong">${esc(r.product)}<span class="sub"><span class="m-only">${fdate(r.date)} · ${qty(r.qty)} sold${r.customer || r.note ? ' · ' : ''}</span>${[r.customer, r.note].filter(Boolean).map(esc).join(' · ')}${r.status !== 'paid' ? `<span class="m-only"> ${payBadge(r)}</span>` : ''}</span></td>
         <td class="r hide-m">${qty(r.qty)}</td><td class="r strong">${money(r.net)}</td><td class="r hide-m">${money(r.cost)}</td>
-        <td class="r ${r.profit < 0 ? 'neg' : 'pos'} strong" data-l="Profit">${money(r.profit, { sign: true })}</td><td class="hide-m">${esc(r.paid_into || '')}</td></tr>`).join('')}</tbody>
+        <td class="r ${r.profit < 0 ? 'neg' : 'pos'} strong" data-l="Profit">${money(r.profit, { sign: true })}</td><td class="hide-m">${payBadge(r)}</td></tr>`).join('')}</tbody>
       <tfoot><tr><td class="hide-m"></td><td class="lead">Total</td><td class="r hide-m">${qty(rows.reduce((a, r) => a + r.qty, 0))}</td><td class="r">${money(s.sales)}</td><td class="r hide-m">${money(s.cost)}</td><td class="r ${s.profit < 0 ? 'neg' : 'pos'}">${money(s.profit, { sign: true })}</td><td class="hide-m"></td></tr></tfoot></table>`,
     empty: (searching) => emptyState('sales', searching ? 'No matching sales' : 'No sales in this period', searching ? 'Try a different search.' : 'When you sell something, record it here — revenue, profit and stock update on their own.', searching ? '' : `<br><button class="btn primary" data-new2>${icon('plus')} Record a sale</button>`),
     bind(r, d) {

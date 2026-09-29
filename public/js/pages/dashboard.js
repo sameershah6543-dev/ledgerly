@@ -69,6 +69,10 @@ export async function dashboard(root) {
         <div class="card"><div class="card-head"><h2>Money you have</h2></div><div class="card-body"><ul class="list">
           ${d.money.map((m) => `<li><div class="l" style="display:flex;gap:10px;align-items:center"><span class="qi ${m.kind === 'cash' ? 'c3' : 'c1'}" style="width:34px;height:34px;border-radius:9px;display:grid;place-items:center">${icon(m.kind === 'cash' ? 'wallet' : 'bank')}</span><b>${esc(m.name)}</b></div><div class="rt"><b class="${m.balance < 0 ? 'neg' : ''}">${money(m.balance)}</b></div></li>`).join('')}
         </ul></div></div>
+        <div class="card"><div class="card-head"><h2>Money owed</h2><a href="#/owed">Open</a></div><div class="card-body"><ul class="list">
+          <li><div class="l"><b>To receive</b><small>Customers who haven’t paid yet</small></div><div class="rt"><b class="${d.owed.receive > 0 ? 'pos' : ''}">${money(d.owed.receive)}</b></div></li>
+          <li><div class="l"><b>To pay</b><small>Suppliers & bills not paid yet</small></div><div class="rt"><b class="${d.owed.pay > 0 ? 'neg' : ''}">${money(d.owed.pay)}</b></div></li>
+        </ul></div></div>
         <div class="card"><div class="card-head"><h2>Inventory</h2><a href="#/inventory">Open</a></div><div class="card-body">
           <ul class="list"><li><div class="l"><small>Stock value (at cost)</small><b>${money(d.stock.value)}</b></div><div class="rt"><small class="muted">Products</small><b>${d.stock.products}</b></div></li>
           ${d.low_stock.map((i) => `<li><div class="l"><b>${esc(i.name)}</b><small>Alert at ${qty(i.min)}</small></div><span class="badge ${i.stock <= 0 ? 'out' : 'low'}">${i.stock <= 0 ? 'Out of stock' : `${qty(i.stock)} left`}</span></li>`).join('')}

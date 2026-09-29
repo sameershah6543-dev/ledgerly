@@ -4,7 +4,7 @@ import puppeteer from 'puppeteer-core';
 import fs from 'node:fs';
 const BASE = process.env.BASE || 'http://localhost:3111';
 const OUT = process.env.SHOTS || 'data/shots'; fs.mkdirSync(OUT, { recursive: true });
-const PAGES = ['dashboard', 'sales', 'expenses', 'inventory', 'profit', 'settings'];
+const PAGES = ['dashboard', 'sales', 'expenses', 'inventory', 'owed', 'ledgers', 'ledgers?name=Bilal', 'profit', 'settings', 'more'];
 const browser = await puppeteer.launch({ executablePath: 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', headless: 'new', args: ['--no-sandbox'] });
 const errors = [];
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -21,7 +21,7 @@ for (const [label, vp] of [['desktop', { width: 1440, height: 900 }], ['phone', 
   for (const p of PAGES) {
     const before = errors.length;
     await page.goto(`${BASE}/#/${p}`); await wait(900);
-    await page.screenshot({ path: `${OUT}/${label}-${p}.png`, fullPage: true });
+    await page.screenshot({ path: `${OUT}/${label}-${p.replace(/\W+/g, '_')}.png`, fullPage: true });
     const bad = await page.$eval('#view', (v) => /Could not load|Something went wrong/.test(v.innerText)).catch(() => true);
     console.log(`${errors.length > before || bad ? 'FAIL' : 'ok  '} ${label} ${p}`, errors.slice(before).join(' | '));
   }

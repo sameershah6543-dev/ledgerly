@@ -5,15 +5,25 @@ import { expenses } from './pages/expenses.js';
 import { inventory } from './pages/inventory.js';
 import { profitLoss } from './pages/profit.js';
 import { settings } from './pages/settings.js';
+import { owed } from './pages/owed.js';
+import { ledgers } from './pages/ledgers.js';
 
-const NAV = [
-  ['dashboard', 'Dashboard', 'Home', 'home', dashboard],
-  ['sales', 'Sales', 'Sales', 'sales', sales],
-  ['expenses', 'Expenses', 'Expenses', 'expense', expenses],
-  ['inventory', 'Inventory', 'Stock', 'box', inventory],
-  ['profit', 'Profit & Loss', 'Profit', 'chart', profitLoss],
+const NAV = [ // [route, sidebar label, phone label, icon, page, in phone tab bar]
+  ['dashboard', 'Dashboard', 'Home', 'home', dashboard, true],
+  ['sales', 'Sales', 'Sales', 'sales', sales, true],
+  ['expenses', 'Expenses', 'Expenses', 'expense', expenses, true],
+  ['inventory', 'Inventory', 'Stock', 'box', inventory, false],
+  ['owed', 'Receivables & Payables', 'Owed', 'swap', owed, true],
+  ['ledgers', 'Ledgers', 'Ledgers', 'book', ledgers, false],
+  ['profit', 'Profit & Loss', 'Profit', 'chart', profitLoss, false],
 ];
-const ROUTES = Object.fromEntries([...NAV.map((n) => [n[0], n[4]]), ['settings', settings]]);
+// phones: everything not in the tab bar lives on the "More" page
+async function more(root) {
+  const items = [...NAV.filter((n) => !n[5]), ['settings', 'Settings', '', 'gear']];
+  root.innerHTML = `<div class="page-head"><div><h1>More</h1><p>Everything else in Ledgerly.</p></div></div>
+    <div class="card more-list">${items.map(([k, label, , ic]) => `<a href="#/${k}">${icon(ic)}<span>${label}</span>${icon('chevron')}</a>`).join('')}</div>`;
+}
+const ROUTES = Object.fromEntries([...NAV.map((n) => [n[0], n[4]]), ['settings', settings], ['more', more]]);
 const app = $('#app');
 
 // ---------------------------------------------------------------- theme
@@ -54,7 +64,7 @@ function shell() {
         <button class="icon-btn" data-theme-btn aria-label="Switch light or dark mode">${icon(isDark() ? 'sun' : 'moon')}</button>
         <a class="icon-btn" href="#/settings" aria-label="Settings">${icon('gear')}</a></div></header>
       <main class="content" id="view"></main></div>
-    <nav class="tabbar">${NAV.map(([k, , short, ic]) => `<a href="#/${k}" data-k="${k}">${icon(ic)}<span>${short}</span></a>`).join('')}</nav></div>`;
+    <nav class="tabbar">${NAV.filter((n) => n[5]).map(([k, , short, ic]) => `<a href="#/${k}" data-k="${k}">${icon(ic)}<span>${short}</span></a>`).join('')}<a href="#/more" data-k="more" data-more>${icon('more')}<span>More</span></a></nav></div>`;
   $$('[data-theme-btn]').forEach((b) => { b.onclick = toggleTheme; });
   $('[data-logout]').onclick = async () => { try { await api('POST', '/api/auth/logout'); } catch { /* ignore */ } showLogin(); };
 }
@@ -66,7 +76,8 @@ export async function route() {
   const view = $('#view'); if (!view) return;
   const [path, query] = (location.hash.replace(/^#\/?/, '') || 'dashboard').split('?');
   const page = ROUTES[path] ? path : 'dashboard';
-  $$('[data-k]').forEach((a) => a.classList.toggle('active', a.dataset.k === page));
+  const onMore = !NAV.find((n) => n[0] === page)?.[5] && page !== 'dashboard';
+  $$('[data-k]').forEach((a) => a.classList.toggle('active', a.dataset.k === page || (a.hasAttribute('data-more') && onMore)));
   const me = ++token; window.scrollTo(0, 0);
   view.innerHTML = '<div class="spinner"></div>';
   const holder = document.createElement('div');

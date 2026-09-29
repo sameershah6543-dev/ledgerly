@@ -23,7 +23,7 @@ try {
 
   // 1. buy & sell a phone, typing the profit instead of the sold price
   await newSale();
-  ok(!(await page.$('.modal [name=item_id]')), 'No stock / product picker in the sale form');
+  ok(await page.$eval('.modal [name=source]', (e) => e.value) === 'direct', 'With an empty inventory the form is buy & sell now');
   await set('item_name', 'iPhone 13 Pro'); await set('unit_cost', '145000'); await set('supplier_name', 'Ali Mobiles'); await set('profit', '35000');
   ok(await page.$eval('.modal [name=unit_price]', (e) => e.value) === '180000', 'Typing the profit fills in the sold price (180,000)');
   ok(!(await submit()), 'Sale saved');
@@ -55,23 +55,43 @@ try {
   const lg = await page.$eval('#view', (v) => v.innerText);
   ok(/first instalment/.test(lg) && /Owes you/.test(lg), 'Bilal ledger shows the payment note and balance');
 
-  // 4. expense with a new category
+  // 4. inventory: add two phones, delete one, sell the other
+  await page.goto(`${BASE}/#/inventory`); await wait(800); await page.click('[data-new]'); await wait(700);
+  await set('item_name', 'Pixel 8'); await set('unit_cost', '90000'); await set('supplier_name', 'Ali Mobiles'); await set('note', 'IMEI 1111');
+  ok(!(await submit()), 'Phone added to inventory');
+  await page.click('[data-new]'); await wait(700);
+  await set('item_name', 'Oppo Reno'); await set('unit_cost', '50000');
+  ok(!(await submit()), 'Second phone added');
+  let stock = await api('/api/simple/stock');
+  ok(stock.rows.length === 2 && stock.summary.value === 140000, 'Inventory holds 2 phones worth 140,000');
+  const oppo = stock.rows.find((x) => x.name === 'Oppo Reno');
+  await page.click(`[data-del="${oppo.id}"]`); await wait(600); await page.click('.modal [type=submit]'); await wait(900);
+  ok(!(await api('/api/simple/stock')).rows.some((x) => x.name === 'Oppo Reno'), 'Deleted phone is gone');
+  const pixel = stock.rows.find((x) => x.name === 'Pixel 8');
+  await page.click(`[data-sell="${pixel.id}"]`); await wait(800);
+  ok(await page.$eval('.modal [name=source]:checked', (e) => e.value) === 'stock', 'Sell opens the sale form on "From my inventory"');
+  await set('unit_price', '105000');
+  ok(/15,000/.test(await page.$eval('.modal [data-s=profit]', (e) => e.textContent)), 'Profit shows 15,000 using the bought price');
+  ok(!(await submit()), 'Sold from inventory');
+  ok(!(await api('/api/simple/stock')).rows.length, 'Inventory is empty after selling');
+
+  // 5. expense with a new category
   await page.goto(`${BASE}/#/expenses`); await wait(600); await page.click('[data-new]'); await wait(700);
   await set('amount', '5000'); await set('category_id', 'new'); await set('new_category', 'Shop repairs');
   ok(!(await submit()), 'Expense with new category saved');
 
-  // 5. edit a sale from the list
+  // 6. edit a sale from the list
   await page.goto(`${BASE}/#/sales`); await wait(800);
   await page.$$eval('tr[data-id]', (trs) => trs.find((t) => /iPhone 13 Pro/.test(t.innerText)).click()); await wait(700);
   ok(await page.$eval('.modal [name=unit_cost]', (e) => e.value) === '145000', 'Edit form shows the bought price');
   await set('unit_price', '182000');
   ok(!(await submit()), 'Sale edited');
 
-  // 6. totals agree
+  // 7. totals agree
   const d = await api('/api/simple/summary');
-  ok(d.sales === 172000 + 182000 + 140000, `Sales add up (${d.sales})`);
-  ok(d.cost_of_sales === 150000 + 145000 + 120000, `What you paid adds up (${d.cost_of_sales})`);
-  ok(d.net_profit === (172000 - 150000) + (182000 - 145000) + (140000 - 120000) - 15000 - 5000, `Net profit adds up (${d.net_profit})`);
+  ok(d.sales === 172000 + 182000 + 140000 + 105000, `Sales add up (${d.sales})`);
+  ok(d.cost_of_sales === 150000 + 145000 + 120000 + 90000, `What you paid adds up (${d.cost_of_sales})`);
+  ok(d.net_profit === (172000 - 150000) + (182000 - 145000) + (140000 - 120000) + 15000 - 15000 - 5000, `Net profit adds up (${d.net_profit})`);
   const integ = await api('/api/integrity'); ok(integ.ok, 'Books balanced');
   ok(!errs.length, `No page errors ${errs.join(' | ')}`);
 } finally { await browser.close(); srv.kill(); }

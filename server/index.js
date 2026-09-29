@@ -92,6 +92,10 @@ api.get('/simple/people', wrap((req) => Simple.people(req.query)));
 api.get('/simple/ledger', wrap((req) => Simple.ledger(req.query.name)));
 api.get('/simple/names', wrap(() => Simple.names()));
 api.get('/simple/item-names', wrap(() => Simple.itemNames()));
+api.get('/simple/stock', wrap((req) => Simple.stockList(req.query)));
+api.post('/simple/stock', wrap((req) => Simple.addStock(req.body, uname(req))));
+api.put('/simple/stock/:id', wrap((req) => Simple.updateStock(Number(req.params.id), req.body, uname(req))));
+api.delete('/simple/stock/:id', wrap((req) => Simple.deleteStock(Number(req.params.id), uname(req))));
 api.delete('/simple/money/:type/:id', wrap((req) => Simple.deleteMoney(req.params.type, Number(req.params.id), uname(req))));
 api.post('/simple/clear-all', admin, wrap((req) => { if (req.body.confirm !== 'DELETE') fail('Type DELETE to confirm'); return Simple.clearAllData(); }));
 

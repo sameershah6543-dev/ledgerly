@@ -91,6 +91,45 @@ await Simple.deleteSale(del.id, U);
 ok(!(await sale(del.id)), 'Deleted sale disappears'); eq(await bal(cash), t0, 'Cash is back to where it was');
 await books('delete');
 
+console.log('\n■ Inventory: phones bought, not sold yet');
+let cs0 = await bal(cash); let cost0 = (await Simple.summary({})).cost_of_sales;
+const px = await Simple.addStock({ item_name: 'Pixel 8', unit_cost: 90000, supplier_name: 'Ali Mobiles', cost_account_id: cash, note: 'IMEI 1111' }, U);
+let inv = await Simple.stockList();
+ok(inv.rows.some((x) => x.id === px.id && x.qty === 1 && x.cost === 90000 && x.bought_from === 'Ali Mobiles'), 'Phone is in inventory at 90,000 from Ali Mobiles');
+eq(await bal(cash), cs0 - 90000, 'Buying it took 90,000 from cash');
+eq((await Simple.summary({})).cost_of_sales, cost0, 'Not counted as a cost until it is sold');
+const op = await Simple.addStock({ item_name: 'Oppo Reno', unit_cost: 50000, cost_paid: 0, supplier_name: 'Hafeez Traders' }, U);
+const hafeez0 = await owes('pay', 'Hafeez Traders');
+await Simple.updateStock(op.id, { item_name: 'Oppo Reno 11', unit_cost: 52000, cost_paid: 0, supplier_name: 'Hafeez Traders' }, U);
+eq(await owes('pay', 'Hafeez Traders'), hafeez0 + 2000, 'Editing the bought price updates what you owe');
+ok((await Simple.stockList()).rows.some((x) => x.name === 'Oppo Reno 11'), 'Name edited');
+await Simple.deleteStock(op.id, U);
+ok(!(await Simple.stockList()).rows.some((x) => x.id === op.id), 'Deleted phone is gone from inventory');
+eq(await owes('pay', 'Hafeez Traders'), hafeez0 - 50000, 'Deleting it also removes what you owed for it');
+await books('inventory add/edit/delete');
+
+console.log('\n■ Sell from inventory');
+const fs1 = await Simple.createSale({ item_id: px.id, unit_price: 105000, customer_name: 'Usman', money_account_id: cash }, U);
+r = await sale(fs1.id);
+eq(r.profit, 15000, 'Profit = 105,000 − 90,000 bought price'); ok(r.bought_from === 'Ali Mobiles' && r.source === 'stock', 'Sale knows where the phone came from');
+ok(!(await Simple.stockList()).rows.some((x) => x.id === px.id), 'Sold phone leaves the inventory');
+eq((await Simple.summary({})).cost_of_sales, cost0 + 90000, 'Its cost is counted when sold');
+await throws(() => Simple.createSale({ item_id: px.id, unit_price: 1000, money_account_id: cash }, U), /Insufficient stock/, 'Cannot sell the same phone twice');
+await Simple.updateSale(fs1.id, { item_id: px.id, unit_price: 108000, customer_name: 'Usman', money_account_id: cash }, U);
+eq((await sale(fs1.id)).profit, 18000, 'Editing the price of an inventory sale updates profit');
+await Simple.deleteSale(fs1.id, U);
+ok((await Simple.stockList()).rows.some((x) => x.id === px.id), 'Deleting the sale puts the phone back in inventory');
+await Simple.deleteStock(px.id, U);
+await books('sell from inventory');
+
+console.log('\n■ Cannot delete a phone that was sold');
+const two = await Simple.addStock({ item_name: 'Redmi Note', qty: 2, unit_cost: 40000, cost_account_id: cash }, U);
+await Simple.createSale({ item_id: two.id, qty: 1, unit_price: 46000, money_account_id: cash }, U);
+await throws(() => Simple.deleteStock(two.id, U), /already sold/, 'Deleting is blocked once one of them is sold');
+eq((await Simple.stockList()).rows.find((x) => x.id === two.id).qty, 1, 'One Redmi left in inventory');
+await books('partly sold');
+
+
 console.log('\n■ Expenses');
 const cats = await Simple.expenseCategories();
 ok(!cats.some((c) => c.name === 'Cost of items sold'), 'Internal cost category is not offered as an expense');

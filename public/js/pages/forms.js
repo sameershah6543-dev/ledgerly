@@ -1,5 +1,5 @@
 // The everyday entry forms, shared by the dashboard and the individual tabs.
-import { $, $$, esc, api, GET, modal, val, money, today, toast, moneyInput, moneyOptions } from '../core.js';
+import { $, $$, esc, api, GET, modal, val, money, qty, icon, today, toast, moneyInput, moneyOptions } from '../core.js';
 
 const changed = (msg) => { toast(msg); document.dispatchEvent(new CustomEvent('data-changed')); return true; };
 const n = (v) => (v === '' || v === null || v === undefined ? NaN : Number(v));
@@ -50,21 +50,35 @@ const paidValue = (f, total, p = '') => {
 const accountValue = (f, p = '') => { const k = F(p); return f.elements[k.mode].value === 'none' ? null : f.elements[k.acct].value; };
 const modeOf = (total, paidAtTime) => (paidAtTime >= total - 0.005 ? 'full' : paidAtTime > 0.005 ? 'part' : 'none');
 
-// ---------------------------------------------------------------- sale (buy the phone, sell it)
-export async function saleForm(sale = null) {
-  const [accounts, names, items] = await Promise.all([GET('/api/simple/money'), GET('/api/simple/names'), GET('/api/simple/item-names')]);
+// ---------------------------------------------------------------- sale (from inventory, or buy & sell now)
+// opts.itemId: open with this inventory phone selected
+export async function saleForm(sale = null, opts = {}) {
+  const [accounts, names, items, stock] = await Promise.all([GET('/api/simple/money'), GET('/api/simple/names'), GET('/api/simple/item-names'), GET('/api/simple/stock')]);
+  const phones = stock.rows.map((x) => ({ ...x, avail: x.qty }));
+  if (sale?.source === 'stock' && sale.item_id) { // the phone being edited is back "in hand" for this form
+    const p = phones.find((x) => x.id === sale.item_id);
+    if (p) p.avail += sale.qty; else phones.unshift({ id: sale.item_id, name: sale.product, cost: sale.unit_cost, avail: sale.qty, bought_from: sale.bought_from });
+  }
+  const byId = (id) => phones.find((x) => String(x.id) === String(id));
+  const source = sale ? sale.source : opts.itemId || phones.length ? 'stock' : 'direct';
+  const firstPhone = sale?.item_id || opts.itemId || phones[0]?.id;
   const laterIn = sale ? r2(sale.received - sale.paid_at_sale) : 0; // payments made after the sale stay recorded on edit
   const laterOut = sale ? r2(sale.cost_paid - sale.cost_paid_at_purchase) : 0;
   const sellMode = sale ? modeOf(sale.total - laterIn, sale.paid_at_sale) : 'full';
-  const buyMode = sale ? (sale.purchase_bill_id ? modeOf(sale.cost - laterOut, sale.cost_paid_at_purchase) : 'full') : 'full';
+  const buyMode = sale?.purchase_bill_id ? modeOf(sale.cost - laterOut, sale.cost_paid_at_purchase) : 'full';
+  const srcOpt = (v, l) => `<label><input type="radio" name="source" value="${v}" ${source === v ? 'checked' : ''}>${l}</label>`;
   const body = `<div class="fields">
-    <div class="field full"><label>What did you sell?</label><input class="input" name="item_name" list="item-names" autocomplete="off" value="${esc(sale?.product || '')}" placeholder="e.g. iPhone 13 (128GB), black"></div>
-    <div class="form-sec">Buying</div>
-    <div class="field"><label>Bought for <span class="opt">(each)</span></label>${moneyInput('unit_cost', sale?.unit_cost ?? '')}</div>
-    <div class="field"><label>Quantity</label><input class="input" name="qty" type="number" inputmode="decimal" min="0" step="any" value="${sale ? sale.qty : 1}"></div>
-    ${payBlock('buy', accounts, { p: 'cost', mode: buyMode, paid: buyMode === 'part' ? sale.cost_paid_at_purchase : '', account: sale?.cost_account_id })}
-    ${laterOut > 0 ? `<p class="help" style="grid-column:1/-1;margin:-6px 0 0">${money(laterOut)} was paid later — that stays recorded.</p>` : ''}
-    <div class="field full" data-supplier><label>Bought from</label><input class="input" name="supplier_name" list="people-names" autocomplete="off" value="${esc(sale?.bought_from || '')}" placeholder="Who you bought it from"></div>
+    ${phones.length ? `<div class="field full"><div class="seg">${srcOpt('stock', `${icon('box')}From my inventory`)}${srcOpt('direct', `${icon('swap')}Buy &amp; sell now`)}</div></div>` : '<input type="hidden" name="source" value="direct">'}
+    <div class="field full" data-src="stock"><label>Which phone?</label><select class="input" name="item_id">${phones.map((x) => `<option value="${x.id}" ${String(x.id) === String(firstPhone) ? 'selected' : ''}>${esc(x.name)} — bought for ${money(x.cost)}${x.bought_from ? ` from ${esc(x.bought_from)}` : ''}${x.avail > 1 ? ` (${qty(x.avail)} left)` : ''}</option>`).join('')}</select></div>
+    <div class="field full" data-src="direct"><label>What did you sell?</label><input class="input" name="item_name" list="item-names" autocomplete="off" value="${esc(sale?.source === 'direct' ? sale.product : '')}" placeholder="e.g. iPhone 13 (128GB), black"></div>
+    <div class="field"><label>Quantity</label><input class="input" name="qty" type="number" inputmode="decimal" min="0" step="any" value="${sale ? sale.qty : 1}"><span class="help" data-avail></span></div>
+    <div class="form-sec" data-src="direct">Buying</div>
+    <div class="field" data-src="direct"><label>Bought for <span class="opt">(each)</span></label>${moneyInput('unit_cost', sale?.source === 'direct' ? sale.unit_cost : '')}</div>
+    <div class="direct-buy" data-src="direct" style="display:contents">
+      ${payBlock('buy', accounts, { p: 'cost', mode: buyMode, paid: buyMode === 'part' ? sale.cost_paid_at_purchase : '', account: sale?.cost_account_id })}
+      ${laterOut > 0 ? `<p class="help" style="grid-column:1/-1;margin:-6px 0 0">${money(laterOut)} was paid later — that stays recorded.</p>` : ''}
+      <div class="field full" data-supplier><label>Bought from</label><input class="input" name="supplier_name" list="people-names" autocomplete="off" value="${esc(sale?.source === 'direct' ? sale.bought_from || '' : '')}" placeholder="Who you bought it from"></div>
+    </div>
     <div class="form-sec">Selling</div>
     <div class="field"><label>Sold for <span class="opt">(each)</span></label>${moneyInput('unit_price', sale?.unit_price ?? '')}</div>
     <div class="field"><label>Profit <span class="opt">(total)</span></label>${moneyInput('profit', '', 'min=""')}<span class="help">Type the profit to fill in the sold price.</span></div>
@@ -76,11 +90,13 @@ export async function saleForm(sale = null) {
     <div class="field full"><label>Note <span class="opt">(optional)</span></label><input class="input" name="note" value="${esc(sale?.note || '')}" placeholder="e.g. IMEI, colour, warranty"></div>
     ${namesList(names)}<datalist id="item-names">${items.map((x) => `<option value="${esc(x)}">`).join('')}</datalist>
   </div>`;
+  const src = (f) => f.elements.source.value;
   const q = (f) => n(f.elements.qty.value);
+  const unitCost = (f) => (src(f) === 'stock' ? byId(f.elements.item_id.value)?.cost ?? NaN : n(f.elements.unit_cost.value));
   const total = (f) => q(f) * n(f.elements.unit_price.value);
-  const costTotal = (f) => q(f) * n(f.elements.unit_cost.value);
+  const costTotal = (f) => q(f) * unitCost(f);
   modal({
-    title: sale ? 'Edit sale' : 'Record a sale', sub: sale ? sale.number : 'What you paid for it, and what you sold it for.', body, submit: sale ? 'Save changes' : 'Save sale',
+    title: sale ? 'Edit sale' : 'Record a sale', sub: sale ? sale.number : 'What you sold, what it cost you, and what you got.', body, submit: sale ? 'Save changes' : 'Save sale',
     onOpen(f) {
       const E = f.elements;
       const saleUpd = wirePay(f, 'sale', () => total(f) - laterIn, $('[data-person]', f), 'Customer');
@@ -90,31 +106,79 @@ export async function saleForm(sale = null) {
         $('[data-s=cost]', f).textContent = Number.isFinite(c) ? money(c) : '—';
         $('[data-s=total]', f).textContent = Number.isFinite(t) ? money(t) : '—';
         const pe = $('[data-s=profit]', f); pe.textContent = Number.isFinite(pr) ? money(pr) : '—'; pe.className = pr < 0 ? 'neg' : pr > 0 ? 'pos' : '';
+        const p = byId(E.item_id.value);
+        $('[data-avail]', f).textContent = src(f) === 'stock' && p ? `${qty(p.avail)} in inventory` : '';
         saleUpd(); buyUpd();
       };
       const fromPrices = () => { const pr = total(f) - costTotal(f); E.profit.value = Number.isFinite(pr) ? r2(pr) : ''; summary(); };
-      const fromProfit = () => { const pr = n(E.profit.value), c = n(E.unit_cost.value); if (q(f) > 0 && Number.isFinite(pr) && Number.isFinite(c)) E.unit_price.value = r2(c + pr / q(f)); summary(); };
+      const fromProfit = () => { const pr = n(E.profit.value), c = unitCost(f); if (q(f) > 0 && Number.isFinite(pr) && Number.isFinite(c)) E.unit_price.value = r2(c + pr / q(f)); summary(); };
+      const switchSrc = () => { $$('[data-src]', f).forEach((el) => el.classList.toggle('hidden', el.dataset.src !== src(f))); fromPrices(); };
+      $$('[name=source]', f).forEach((r) => { r.onchange = switchSrc; });
+      E.item_id.onchange = fromPrices;
       E.qty.oninput = fromPrices; E.unit_price.oninput = fromPrices; E.unit_cost.oninput = fromPrices; E.profit.oninput = fromProfit;
-      fromPrices();
+      switchSrc();
     },
     async onSubmit(f) {
-      if (!val(f, 'item_name')) throw new Error('Enter what you sold');
-      if (!(n(val(f, 'unit_cost')) >= 0)) throw new Error('Enter what you bought it for');
+      const stockSale = src(f) === 'stock';
+      if (stockSale && !f.elements.item_id.value) throw new Error('Choose the phone from your inventory');
+      if (!stockSale && !val(f, 'item_name')) throw new Error('Enter what you sold');
+      if (!stockSale && !(n(val(f, 'unit_cost')) >= 0)) throw new Error('Enter what you bought it for');
       if (!(n(val(f, 'unit_price')) > 0)) throw new Error('Enter what you sold it for');
+      if (stockSale && q(f) > byId(f.elements.item_id.value).avail + 1e-9) throw new Error(`You only have ${qty(byId(f.elements.item_id.value).avail)} of these`);
       const paid = paidValue(f, total(f) - laterIn);
-      const costPaid = paidValue(f, costTotal(f) - laterOut, 'cost');
       if (paid !== '' && !val(f, 'customer_name')) throw new Error('Enter the customer’s name so you know who owes you');
-      if (costPaid !== '' && costTotal(f) > 0 && !val(f, 'supplier_name')) throw new Error('Enter who you bought it from, so you know who you owe');
-      const body = {
-        item_name: val(f, 'item_name'), qty: val(f, 'qty'), unit_price: val(f, 'unit_price'), unit_cost: val(f, 'unit_cost'),
-        paid: paid === '' ? r2(total(f) - laterIn) : paid, money_account_id: accountValue(f),
-        cost_paid: costPaid === '' ? r2(costTotal(f) - laterOut) : costPaid, cost_account_id: accountValue(f, 'cost'),
-        supplier_name: val(f, 'supplier_name'), customer_name: val(f, 'customer_name'), date: val(f, 'date'), note: val(f, 'note'),
-      };
+      const body = { qty: val(f, 'qty'), unit_price: val(f, 'unit_price'), paid: paid === '' ? r2(total(f) - laterIn) : paid, money_account_id: accountValue(f),
+        customer_name: val(f, 'customer_name'), date: val(f, 'date'), note: val(f, 'note') };
+      if (stockSale) body.item_id = f.elements.item_id.value;
+      else {
+        const costPaid = paidValue(f, costTotal(f) - laterOut, 'cost');
+        if (costPaid !== '' && costTotal(f) > 0 && !val(f, 'supplier_name')) throw new Error('Enter who you bought it from, so you know who you owe');
+        Object.assign(body, { item_name: val(f, 'item_name'), unit_cost: val(f, 'unit_cost'), supplier_name: val(f, 'supplier_name'),
+          cost_paid: costPaid === '' ? r2(costTotal(f) - laterOut) : costPaid, cost_account_id: accountValue(f, 'cost') });
+      }
       if (sale) await api('PUT', `/api/simple/sales/${sale.id}`, body); else await api('POST', '/api/simple/sales', body);
       return changed(sale ? 'Sale updated' : 'Sale saved');
     },
-    onDelete: sale ? async () => { await api('DELETE', `/api/simple/sales/${sale.id}`); return changed('Sale deleted'); } : null,
+    onDelete: sale ? async () => { await api('DELETE', `/api/simple/sales/${sale.id}`); return changed(sale.source === 'stock' ? 'Sale deleted — phone is back in inventory' : 'Sale deleted'); } : null,
+  });
+}
+
+// ---------------------------------------------------------------- add / edit a phone in inventory
+export async function stockForm(item = null) {
+  const [accounts, names, items] = await Promise.all([GET('/api/simple/money'), GET('/api/simple/names'), GET('/api/simple/item-names')]);
+  const later = item ? item.paid_later : 0;
+  const mode = item ? modeOf(item.qty * item.cost - later, item.paid_at_purchase) : 'full';
+  const body = `<div class="fields">
+    <div class="field full"><label>Phone</label><input class="input" name="item_name" list="item-names" autocomplete="off" value="${esc(item?.name || '')}" placeholder="e.g. iPhone 13 (128GB), black"></div>
+    <div class="field"><label>Bought for <span class="opt">(each)</span></label>${moneyInput('unit_cost', item?.cost ?? '')}</div>
+    <div class="field"><label>Quantity</label><input class="input" name="qty" type="number" inputmode="decimal" min="0" step="any" value="${item?.qty ?? 1}"></div>
+    <div class="summary-box" style="grid-template-columns:1fr"><div><small>Total cost</small><b data-s="total">—</b></div></div>
+    ${payBlock('buy', accounts, { p: 'cost', mode, paid: mode === 'part' ? item.paid_at_purchase : '', account: item?.account_id })}
+    ${later > 0 ? `<p class="help" style="grid-column:1/-1;margin:-6px 0 0">${money(later)} was paid later — that stays recorded.</p>` : ''}
+    <div class="field" data-supplier><label>Bought from</label><input class="input" name="supplier_name" list="people-names" autocomplete="off" value="${esc(item?.bought_from || '')}" placeholder="Who you bought it from"></div>
+    ${dateField(item?.bought_on)}
+    <div class="field full"><label>Note <span class="opt">(optional)</span></label><input class="input" name="note" value="${esc(item?.notes || '')}" placeholder="e.g. IMEI, colour, condition"></div>
+    ${namesList(names)}<datalist id="item-names">${items.map((x) => `<option value="${esc(x)}">`).join('')}</datalist>
+  </div>`;
+  const total = (f) => n(f.elements.qty.value) * n(f.elements.unit_cost.value);
+  modal({
+    title: item ? 'Edit phone' : 'Add a phone to inventory', sub: item ? 'Change what you paid or where you bought it.' : 'A phone you bought and haven’t sold yet.', body, submit: item ? 'Save changes' : 'Add to inventory',
+    onOpen(f) {
+      const buyUpd = wirePay(f, 'buy', () => total(f) - later, $('[data-supplier]', f), 'Bought from', 'cost');
+      const upd = () => { $('[data-s=total]', f).textContent = Number.isFinite(total(f)) ? money(total(f)) : '—'; buyUpd(); };
+      f.elements.qty.oninput = upd; f.elements.unit_cost.oninput = upd; upd();
+    },
+    async onSubmit(f) {
+      if (!val(f, 'item_name')) throw new Error('Enter the phone');
+      if (!(n(val(f, 'unit_cost')) > 0)) throw new Error('Enter what you bought it for');
+      const costPaid = paidValue(f, total(f) - later, 'cost');
+      if (costPaid !== '' && !val(f, 'supplier_name')) throw new Error('Enter who you bought it from, so you know who you owe');
+      const body = { item_name: val(f, 'item_name'), unit_cost: val(f, 'unit_cost'), qty: val(f, 'qty'), supplier_name: val(f, 'supplier_name'),
+        cost_paid: costPaid === '' ? r2(total(f) - later) : costPaid, cost_account_id: accountValue(f, 'cost'), date: val(f, 'date'), note: val(f, 'note') };
+      if (item) await api('PUT', `/api/simple/stock/${item.id}`, body); else await api('POST', '/api/simple/stock', body);
+      return changed(item ? 'Phone updated' : 'Phone added to inventory');
+    },
+    onDelete: item ? async () => { await api('DELETE', `/api/simple/stock/${item.id}`); return changed('Phone deleted from inventory'); } : null,
   });
 }
 

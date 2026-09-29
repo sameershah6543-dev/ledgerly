@@ -5,11 +5,13 @@ import { expenses } from './pages/expenses.js';
 import { profitLoss } from './pages/profit.js';
 import { settings } from './pages/settings.js';
 import { owed } from './pages/owed.js';
+import { inventory } from './pages/inventory.js';
 import { ledgers } from './pages/ledgers.js';
 
 const NAV = [ // [route, sidebar label, phone label, icon, page, in phone tab bar]
   ['dashboard', 'Dashboard', 'Home', 'home', dashboard, true],
   ['sales', 'Sales', 'Sales', 'sales', sales, true],
+  ['inventory', 'Inventory', 'Stock', 'box', inventory, false],
   ['expenses', 'Expenses', 'Expenses', 'expense', expenses, true],
   ['owed', 'Receivables & Payables', 'Owed', 'swap', owed, true],
   ['ledgers', 'Ledgers', 'Ledgers', 'book', ledgers, false],

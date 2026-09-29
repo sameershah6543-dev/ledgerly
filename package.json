@@ -1,0 +1,24 @@
+{
+  "name": "ledgerly-accounting",
+  "version": "1.0.0",
+  "description": "Simple shop accounting: sales, expenses, inventory and profit",
+  "type": "module",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "seed": "node server/reset.js",
+    "test": "node test/flows.test.js && node test/simple.test.js",
+    "test:ui": "node test/ui-flow.mjs",
+    "test:all": "node test/flows.test.js && npm run test:ui"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.18.0",
+    "express": "^4.22.3"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^25.11.0"
+  }
+}

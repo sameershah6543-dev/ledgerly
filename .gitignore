@@ -1,0 +1,8 @@
+node_modules/
+# the live database, uploads and screenshots - never publish these
+data/
+backup-before-redesign/
+*.db
+*.db-wal
+*.db-shm
+.env

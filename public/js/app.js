@@ -2,7 +2,6 @@ import { S, $, $$, esc, api, GET, icon, remember } from './core.js';
 import { dashboard } from './pages/dashboard.js';
 import { sales } from './pages/sales.js';
 import { expenses } from './pages/expenses.js';
-import { inventory } from './pages/inventory.js';
 import { profitLoss } from './pages/profit.js';
 import { settings } from './pages/settings.js';
 import { owed } from './pages/owed.js';
@@ -12,7 +11,6 @@ const NAV = [ // [route, sidebar label, phone label, icon, page, in phone tab ba
   ['dashboard', 'Dashboard', 'Home', 'home', dashboard, true],
   ['sales', 'Sales', 'Sales', 'sales', sales, true],
   ['expenses', 'Expenses', 'Expenses', 'expense', expenses, true],
-  ['inventory', 'Inventory', 'Stock', 'box', inventory, false],
   ['owed', 'Receivables & Payables', 'Owed', 'swap', owed, true],
   ['ledgers', 'Ledgers', 'Ledgers', 'book', ledgers, false],
   ['profit', 'Profit & Loss', 'Profit', 'chart', profitLoss, false],
@@ -38,7 +36,7 @@ const brand = () => `<div class="brand"><div class="mark">${icon('logo')}</div><
 function showLogin(msg) {
   app.innerHTML = `<div class="login"><form class="login-card" id="lf">
     <div class="brand"><div class="mark">${icon('logo')}</div><div><b>Ledgerly</b><small>Shop accounts made simple</small></div></div>
-    <h1>Welcome back</h1><p class="muted" style="margin:6px 0 0">Sign in to see your sales, stock and profit.</p>
+    <h1>Welcome back</h1><p class="muted" style="margin:6px 0 0">Sign in to see your sales, money owed and profit.</p>
     <div class="fields"><div class="form-error ${msg ? '' : 'hidden'}" id="le" style="margin:0">${esc(msg || '')}</div>
       <div class="field"><label for="u">Username</label><input class="input" id="u" autocomplete="username" autofocus></div>
       <div class="field"><label for="p">Password</label><input class="input" id="p" type="password" autocomplete="current-password"></div></div>

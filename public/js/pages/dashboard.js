@@ -1,5 +1,5 @@
 import { S, $, $$, esc, GET, icon, money, compact, qty, fdate, monthName, period, PERIODS, periodLabel, remember, emptyState } from '../core.js';
-import { saleForm, expenseForm, restockForm } from './forms.js';
+import { saleForm, expenseForm } from './forms.js';
 
 // Grouped bars: sales vs net profit per month (profit bars go red below zero).
 export function barChart(trend) {
@@ -45,12 +45,12 @@ export async function dashboard(root) {
     <div class="quick">
       <button data-a="sale"><span class="qi c1">${icon('sales')}</span><span><b>Record a sale</b><small>You sold something</small></span></button>
       <button data-a="expense"><span class="qi c2">${icon('expense')}</span><span><b>Add an expense</b><small>You paid a bill or cost</small></span></button>
-      <button data-a="stock"><span class="qi c3">${icon('box')}</span><span><b>Add stock</b><small>You bought products</small></span></button>
+      <button data-a="owed"><span class="qi c3">${icon('swap')}</span><span><b>Record a payment</b><small>Money someone paid you, or you paid</small></span></button>
     </div>
 
     <div class="stats">
       <div class="card stat"><div class="label"><span class="dot" style="background:var(--primary)"></span>Sales</div><div class="value">${money(d.sales)}</div><div class="sub">${d.sales_count} sale${d.sales_count === 1 ? '' : 's'}</div></div>
-      <div class="card stat"><div class="label"><span class="dot" style="background:var(--green)"></span>Profit on sales</div><div class="value">${money(d.gross_profit)}</div><div class="sub">${margin}% margin after product cost</div></div>
+      <div class="card stat"><div class="label"><span class="dot" style="background:var(--green)"></span>Profit on sales</div><div class="value">${money(d.gross_profit)}</div><div class="sub">${margin}% margin after what you paid</div></div>
       <div class="card stat"><div class="label"><span class="dot" style="background:var(--red)"></span>Expenses</div><div class="value">${money(d.expenses)}</div><div class="sub">Rent, bills, salaries…</div></div>
       <div class="card stat hero ${loss ? 'loss' : ''}"><div class="label">${loss ? 'Net loss' : 'Net profit'}</div><div class="value">${money(d.net_profit)}</div><div class="sub">What you ${loss ? 'lost' : 'kept'} after everything</div></div>
     </div>
@@ -73,16 +73,11 @@ export async function dashboard(root) {
           <li><div class="l"><b>To receive</b><small>Customers who haven’t paid yet</small></div><div class="rt"><b class="${d.owed.receive > 0 ? 'pos' : ''}">${money(d.owed.receive)}</b></div></li>
           <li><div class="l"><b>To pay</b><small>Suppliers & bills not paid yet</small></div><div class="rt"><b class="${d.owed.pay > 0 ? 'neg' : ''}">${money(d.owed.pay)}</b></div></li>
         </ul></div></div>
-        <div class="card"><div class="card-head"><h2>Inventory</h2><a href="#/inventory">Open</a></div><div class="card-body">
-          <ul class="list"><li><div class="l"><small>Stock value (at cost)</small><b>${money(d.stock.value)}</b></div><div class="rt"><small class="muted">Products</small><b>${d.stock.products}</b></div></li>
-          ${d.low_stock.map((i) => `<li><div class="l"><b>${esc(i.name)}</b><small>Alert at ${qty(i.min)}</small></div><span class="badge ${i.stock <= 0 ? 'out' : 'low'}">${i.stock <= 0 ? 'Out of stock' : `${qty(i.stock)} left`}</span></li>`).join('')}
-          ${d.low_stock.length ? '' : `<li><div class="l"><small class="pos" style="display:flex;gap:6px;align-items:center">${icon('check')} Stock levels look good</small></div></li>`}</ul>
-        </div></div>
       </div>
     </div>`;
   $$('[data-p]', root).forEach((b) => { b.onclick = () => { remember('dash-period', b.dataset.p); dashboard(root); }; });
   $('[data-a=sale]', root).onclick = () => saleForm();
   $('[data-a=expense]', root).onclick = () => expenseForm();
-  $('[data-a=stock]', root).onclick = () => restockForm();
+  $('[data-a=owed]', root).onclick = () => { location.hash = '#/owed'; };
   chartTips($('#chart', root), d.trend);
 }

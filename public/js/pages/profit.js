@@ -9,14 +9,14 @@ export async function profitLoss(root) {
   const loss = d.net_profit < 0; const maxExp = Math.max(1, ...d.expense_breakdown.map((e) => e.amount));
   const range = d.from === '0000-01-01' ? `Up to ${fdate(d.to)}` : `${fdate(d.from)} – ${fdate(d.to)}`;
   root.innerHTML = `
-    <div class="page-head"><div><h1>Profit &amp; Loss</h1><p>Did you make money? Sales minus what the products cost, minus your expenses.</p></div>
+    <div class="page-head"><div><h1>Profit &amp; Loss</h1><p>Did you make money? What you sold for, minus what you paid, minus your expenses.</p></div>
       <div class="actions no-print"><button class="btn" data-print>${icon('printer')} Print</button></div></div>
     <div class="toolbar no-print"><div class="chips">${OPTIONS.map(([k, l]) => `<button data-p="${k}" class="${k === key ? 'on' : ''}">${l}</button>`).join('')}</div></div>
     <div class="dash-grid">
       <div class="card"><div class="card-head"><div><h2>${esc(S.settings.business_name || 'Profit & Loss')}</h2><span class="muted" style="font-size:13.5px">${range}</span></div></div>
         <div class="card-body pl">
           <div class="pl-row"><span>Sales<span class="hint">${d.sales_count} sale${d.sales_count === 1 ? '' : 's'}</span></span><span class="n">${money(d.sales)}</span></div>
-          <div class="pl-row"><span>Cost of products sold<span class="hint">What the items you sold cost you</span></span><span class="n">${money(-d.cost_of_sales)}</span></div>
+          <div class="pl-row"><span>What you paid for them<span class="hint">The buying price of everything you sold</span></span><span class="n">${money(-d.cost_of_sales)}</span></div>
           <div class="pl-row total"><span>Profit on sales</span><span class="${d.gross_profit < 0 ? 'neg' : ''}">${money(d.gross_profit)}</span></div>
           ${d.other_income ? `<div class="pl-row"><span>Other income</span><span class="n">${money(d.other_income)}</span></div>` : ''}
           <div class="pl-row"><span>Expenses<span class="hint">Rent, bills, salaries and other running costs</span></span><span class="n">${money(-d.expenses)}</span></div>

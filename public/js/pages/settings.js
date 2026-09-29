@@ -37,7 +37,7 @@ export async function settings(root) {
   };
   const clear = $('[data-clear]', root);
   if (clear) clear.onclick = () => modal({
-    title: 'Start fresh?', sub: 'This permanently deletes every sale, expense, product and stock record.', submit: 'Delete everything', danger: true,
+    title: 'Start fresh?', sub: 'This permanently deletes every sale, expense and payment.', submit: 'Delete everything', danger: true,
     body: `<p style="margin:0 0 14px;color:var(--text-2)">Your settings, login, cash and bank accounts and expense categories are kept. Consider downloading a backup first.</p>
       <div class="field"><label>Type <b>DELETE</b> to confirm</label><input class="input" name="confirm" autocomplete="off"></div>`,
     async onSubmit(f) {

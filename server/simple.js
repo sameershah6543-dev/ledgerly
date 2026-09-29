@@ -1,4 +1,4 @@
-// Simple mode: the small set of actions a shop owner needs (sell, spend, stock, profit).
+// Simple mode: the small set of actions a shop owner needs (buy & sell, spend, who owes what, profit).
 // Everything goes through the full double-entry documents underneath, so the books stay balanced.
 import { all, get, run, insert, tx } from './db.js';
 import { fail, r2, num, str, reqStr, id as idv, isoDate, today, addMonths, monthEnd } from './util.js';
@@ -55,53 +55,64 @@ export async function summary(q) {
     const m = await totals(s, monthEnd(s));
     trend.push({ month: s.slice(0, 7), sales: m.sales, profit: m.net_profit, expenses: r2(m.expenses + m.cost_of_sales) });
   }
-  const stock = await itemList({ size: 'all' });
   return {
     from, to, ...t, sales_count: count, trend,
-    stock: { products: stock.summary.items, value: stock.summary.value, low: stock.summary.low, out: stock.summary.out },
     money: await moneyList(),
     owed: { receive: (await openList('receive')).total, pay: (await openList('pay')).total },
     recent: (await salesList({ from, to, limit: 5 })).rows,
-    low_stock: stock.rows.filter((i) => !i.is_service && i.active && i.current_stock <= i.min_stock).slice(0, 5)
-      .map((i) => ({ id: i.id, name: i.name, stock: i.current_stock, min: i.min_stock })),
   };
 }
 
 // ---------------------------------------------------------------------------
-// Sales (paid in full, part paid, or on credit)
+// Sales: buy a phone, sell it. Each sale is a purchase (what you paid - cost of sales)
+// linked to a sale (what you sold it for). No stock is counted.
 // ---------------------------------------------------------------------------
 // receipts/payments created together with the sale/purchase are tagged so an edit replaces only them
 const AT_SALE = 'at-sale', AT_PURCHASE = 'at-purchase';
 const atSaleSql = `(r.notes='${AT_SALE}' OR (r.notes IS NULL AND r.description LIKE 'Sale %'))`;
 const statusOf = (total, paid) => (paid >= total - 0.005 ? 'paid' : paid > 0.005 ? 'part' : 'unpaid');
+export const GENERAL_SUPPLIER = 'General Supplier';
+
+// the purchase side of a sale is booked straight to Cost of Goods Sold through this (hidden) category
+async function costCategory() {
+  const acc = sys('COGS');
+  const c = await get("SELECT id FROM categories WHERE kind='expense' AND account_id=?", acc);
+  return c ? c.id : insert('categories', { kind: 'expense', name: 'Cost of items sold', account_id: acc, active: 0 });
+}
+const salesCategory = async () => (await get("SELECT id FROM categories WHERE kind='revenue' AND account_id=?", sys('SALES')))?.id;
 
 export async function salesList(q = {}) {
   const { from, to } = range(q);
   const s = q.search ? `%${String(q.search).toLowerCase()}%` : null;
   const rows = await all(`SELECT * FROM (SELECT si.id, si.number, si.date, p.name AS customer, si.notes AS note, si.total,
-      si.subtotal - si.discount_total AS net,
+      si.subtotal - si.discount_total AS net, si.purchase_bill_id,
       (SELECT GROUP_CONCAT(COALESCE(i.name, l.description), ', ') FROM sales_invoice_lines l LEFT JOIN items i ON i.id=l.item_id WHERE l.invoice_id=si.id) AS product,
-      (SELECT l.item_id FROM sales_invoice_lines l WHERE l.invoice_id=si.id ORDER BY l.id LIMIT 1) AS item_id,
       (SELECT COALESCE(SUM(qty),0) FROM sales_invoice_lines WHERE invoice_id=si.id) AS qty,
-      (SELECT COALESCE(SUM(qty*unit_cost),0) FROM sales_invoice_lines WHERE invoice_id=si.id) AS cost,
+      COALESCE((SELECT pi.subtotal FROM purchase_invoices pi WHERE pi.id=si.purchase_bill_id AND pi.is_deleted=0),
+        (SELECT COALESCE(SUM(qty*unit_cost),0) FROM sales_invoice_lines WHERE invoice_id=si.id)) AS cost,
+      (SELECT sp.name FROM purchase_invoices pi JOIN parties sp ON sp.id=pi.supplier_id WHERE pi.id=si.purchase_bill_id) AS bought_from,
+      (SELECT COALESCE(SUM(x.amount),0) FROM payments x WHERE x.ref_type='purchase_invoice' AND x.ref_id=si.purchase_bill_id AND x.is_deleted=0) AS cost_paid,
+      (SELECT COALESCE(SUM(x.amount),0) FROM payments x WHERE x.ref_type='purchase_invoice' AND x.ref_id=si.purchase_bill_id AND x.is_deleted=0 AND x.notes='${AT_PURCHASE}') AS cost_paid_at_purchase,
+      (SELECT x.money_account_id FROM payments x WHERE x.ref_type='purchase_invoice' AND x.ref_id=si.purchase_bill_id AND x.is_deleted=0 ORDER BY x.id LIMIT 1) AS cost_account_id,
       (SELECT COALESCE(SUM(r.amount),0) FROM receipts r WHERE r.ref_type='invoice' AND r.ref_id=si.id AND r.is_deleted=0) AS received,
       (SELECT COALESCE(SUM(r.amount),0) FROM receipts r WHERE r.ref_type='invoice' AND r.ref_id=si.id AND r.is_deleted=0 AND ${atSaleSql}) AS paid_at_sale,
-      (SELECT r.money_account_id FROM receipts r WHERE r.ref_type='invoice' AND r.ref_id=si.id AND r.is_deleted=0 ORDER BY r.id LIMIT 1) AS money_account_id,
-      (SELECT m.name FROM receipts r JOIN money_accounts m ON m.id=r.money_account_id WHERE r.ref_type='invoice' AND r.ref_id=si.id AND r.is_deleted=0 ORDER BY r.id LIMIT 1) AS paid_into
+      (SELECT r.money_account_id FROM receipts r WHERE r.ref_type='invoice' AND r.ref_id=si.id AND r.is_deleted=0 ORDER BY r.id LIMIT 1) AS money_account_id
     FROM sales_invoices si JOIN parties p ON p.id=si.customer_id
     WHERE si.is_deleted=0 AND si.state='sent' AND si.date BETWEEN ? AND ?)
-    WHERE ? IS NULL OR lower(product || ' ' || customer || ' ' || COALESCE(note,'') || ' ' || number) LIKE ?
+    WHERE ? IS NULL OR lower(product || ' ' || customer || ' ' || COALESCE(bought_from,'') || ' ' || COALESCE(note,'') || ' ' || number) LIKE ?
     ORDER BY date DESC, id DESC ${q.limit ? 'LIMIT ' + Number(q.limit) : ''}`, from, to, s, s);
   for (const r of rows) {
     r.cost = r2(r.cost); r.profit = r2(r.net - r.cost); r.unit_price = r.qty ? r2(r.net / r.qty) : 0; r.unit_cost = r.qty ? r2(r.cost / r.qty) : 0;
     r.received = r2(r.received); r.paid_at_sale = r2(r.paid_at_sale); r.due = r2(r.total - r.received); r.status = statusOf(r.total, r.received);
+    r.cost_paid = r2(r.cost_paid); r.cost_paid_at_purchase = r2(r.cost_paid_at_purchase); r.cost_due = r.purchase_bill_id ? r2(r.cost - r.cost_paid) : 0;
     if (r.customer === 'Walk-in Customer') r.customer = '';
+    if (r.bought_from === GENERAL_SUPPLIER) r.bought_from = '';
   }
   const sum = (k) => r2(rows.reduce((a, r) => a + r[k], 0));
   return { rows, summary: { count: rows.length, sales: sum('net'), cost: sum('cost'), profit: sum('profit'), due: sum('due') } };
 }
 
-// how much was paid at the time of the sale/purchase: '' / missing = all of it
+// how much was paid at the time: '' / missing = all of it
 const paidAmount = (v, total, label) => {
   if (v === undefined || v === null || v === '') return total;
   const p = num(v, label, { min: 0 });
@@ -109,59 +120,78 @@ const paidAmount = (v, total, label) => {
   return r2(p);
 };
 
-async function saleBody(b, user) {
+async function saleBody(b) {
   const date = isoDate(b.date || today(), 'Date');
-  const qty = num(b.qty, 'Quantity', { required: true }); if (qty <= 0) fail('Quantity must be more than zero');
-  const price = num(b.unit_price, 'Selling price', { required: true, min: 0 }); if (price <= 0) fail('Selling price must be more than zero');
-  const cost = b.unit_cost === '' || b.unit_cost === null || b.unit_cost === undefined ? null : num(b.unit_cost, 'Cost price', { min: 0 });
-  const total = r2(qty * price);
+  const name = reqStr(b.item_name, 'What you sold');
+  const qty = num(b.qty ?? 1, 'Quantity', { required: true }); if (qty <= 0) fail('Quantity must be more than zero');
+  const price = num(b.unit_price, 'Sold for', { required: true, min: 0 }); if (price <= 0) fail('Enter how much you sold it for');
+  const cost = num(b.unit_cost, 'Bought for', { required: true, min: 0 });
+  const total = r2(qty * price), costTotal = r2(qty * cost);
   const paid = paidAmount(b.paid, total, 'Amount received');
   if (paid < total - 0.005 && !str(b.customer_name)) fail('Enter the customer’s name so you know who owes you the rest');
-  const money = paid > 0 ? await moneyAcc(idv(b.money_account_id, 'Received into'), 'Received into') : null;
-  let itemId = b.item_id ? idv(b.item_id, 'Product') : null;
-  if (!itemId) {
-    // a product that is not in the inventory yet: add it with exactly the quantity being sold
-    const name = reqStr(b.item_name, 'Product');
-    if (cost === null) fail('Enter what this product cost you, so the profit can be worked out');
-    if (await get('SELECT id FROM items WHERE lower(name)=lower(?) AND is_deleted=0', name)) fail(`"${name}" is already in your inventory - pick it from the list`);
-    itemId = (await saveItem({ name, purchase_price: cost, selling_price: price, opening_stock: qty, opening_date: date }, null, user)).id;
-  }
-  const item = await get('SELECT * FROM items WHERE id=? AND is_deleted=0', itemId); if (!item) fail('Product not found');
+  const costPaid = costTotal > 0 ? paidAmount(b.cost_paid, costTotal, 'Amount paid for it') : 0;
+  if (costPaid < costTotal - 0.005 && !str(b.supplier_name)) fail('Enter who you bought it from, so you know who you owe');
   return {
-    date, money, total, paid,
-    doc: {
-      customer_id: (await findOrCreateCustomer(b.customer_name)).id, date, due_date: date, state: 'sent', notes: str(b.note),
-      lines: [{ item_id: item.id, qty, unit_price: price, tax_rate: 0, cost_override: item.is_service ? null : cost }],
-    },
+    date, name, qty, price, cost, total, costTotal, paid, costPaid, note: str(b.note),
+    money: paid > 0 ? await moneyAcc(idv(b.money_account_id, 'Received into'), 'Received into') : null,
+    costMoney: costPaid > 0 ? await moneyAcc(idv(b.cost_account_id || b.money_account_id, 'Paid from'), 'Paid from') : null,
+    customerId: (await findOrCreateCustomer(b.customer_name)).id,
+    supplierId: (await findOrCreateSupplier(str(b.supplier_name) || GENERAL_SUPPLIER)).id,
   };
 }
 async function receive(invId, date, money, amount, user, notes = AT_SALE, description = null) {
   const inv = await get('SELECT * FROM sales_invoices WHERE id=?', invId);
   await saveDoc(docs.receipts, { date, kind: 'customer', customer_id: inv.customer_id, ref_type: 'invoice', ref_id: invId, amount, method: await method(money.id), money_account_id: money.id, description: description || `Sale ${inv.number}`, notes }, null, user);
 }
+async function payBill(billId, date, money, amount, user, notes = AT_PURCHASE, description = null) {
+  const bill = await get('SELECT * FROM purchase_invoices WHERE id=?', billId);
+  await saveDoc(docs.payments, { date, category: 'supplier_invoice', party_id: bill.supplier_id, ref_id: billId, amount, method: await method(money.id), money_account_id: money.id, description: description || `Purchase ${bill.number}`, notes }, null, user);
+}
 async function dropReceipts(invId, user, { atSaleOnly = false } = {}) {
   for (const r of await all(`SELECT id FROM receipts r WHERE ref_type='invoice' AND ref_id=? AND is_deleted=0 ${atSaleOnly ? `AND ${atSaleSql}` : ''}`, invId)) await deleteDoc(docs.receipts, r.id, user);
 }
+async function dropBillPayments(billId, user, { atPurchaseOnly = false } = {}) {
+  for (const r of await all(`SELECT id FROM payments WHERE ref_type='purchase_invoice' AND ref_id=? AND is_deleted=0 ${atPurchaseOnly ? `AND notes='${AT_PURCHASE}'` : ''}`, billId)) await deleteDoc(docs.payments, r.id, user);
+}
+// write both halves; ids given = update in place (later payments are kept)
+async function writeSale(s, user, invId = null, billId = null) {
+  const billDoc = { supplier_id: s.supplierId, date: s.date, due_date: s.date, notes: s.note,
+    lines: [{ description: s.name, qty: s.qty, unit_price: s.cost, tax_rate: 0, expense_category_id: await costCategory() }] };
+  let bill = null;
+  if (s.costTotal > 0) bill = await saveDoc(docs.bills, billDoc, billId, user);
+  else if (billId) { await dropBillPayments(billId, user); await deleteDoc(docs.bills, billId, user); }
+  const inv = await saveDoc(docs.invoices, {
+    customer_id: s.customerId, date: s.date, due_date: s.date, state: 'sent', notes: s.note,
+    lines: [{ description: s.name, qty: s.qty, unit_price: s.price, tax_rate: 0, revenue_category_id: await salesCategory() }],
+  }, invId, user);
+  await run('UPDATE sales_invoices SET purchase_bill_id=? WHERE id=?', bill?.id ?? null, inv.id);
+  if (s.paid > 0) await receive(inv.id, s.date, s.money, s.paid, user);
+  if (bill && s.costPaid > 0) await payBill(bill.id, s.date, s.costMoney, s.costPaid, user);
+  return { id: inv.id };
+}
 export async function createSale(b, user) {
-  return await tx(async () => {
-    const s = await saleBody(b, user);
-    const inv = await saveDoc(docs.invoices, s.doc, null, user);
-    if (s.paid > 0) await receive(inv.id, s.date, s.money, s.paid, user);
-    return { id: inv.id };
-  });
+  return await tx(async () => writeSale(await saleBody(b), user));
 }
 export async function updateSale(id, b, user) {
   return await tx(async () => {
-    if (!await get('SELECT id FROM sales_invoices WHERE id=? AND is_deleted=0', id)) fail('Sale not found', 404);
-    await dropReceipts(id, user, { atSaleOnly: true }); // payments received later stay
-    const s = await saleBody(b, user);
-    await saveDoc(docs.invoices, s.doc, id, user);
-    if (s.paid > 0) await receive(id, s.date, s.money, s.paid, user);
-    return { id };
+    const inv = await get('SELECT * FROM sales_invoices WHERE id=? AND is_deleted=0', id); if (!inv) fail('Sale not found', 404);
+    await dropReceipts(id, user, { atSaleOnly: true }); // payments made later stay
+    if (inv.purchase_bill_id) await dropBillPayments(inv.purchase_bill_id, user, { atPurchaseOnly: true });
+    return writeSale(await saleBody(b), user, id, inv.purchase_bill_id || null);
   });
 }
 export async function deleteSale(id, user) {
-  return await tx(async () => { await dropReceipts(id, user); await deleteDoc(docs.invoices, id, user); return { ok: true }; });
+  return await tx(async () => {
+    const inv = await get('SELECT * FROM sales_invoices WHERE id=? AND is_deleted=0', id); if (!inv) fail('Sale not found', 404);
+    await dropReceipts(id, user); await deleteDoc(docs.invoices, id, user);
+    if (inv.purchase_bill_id) { await dropBillPayments(inv.purchase_bill_id, user); await deleteDoc(docs.bills, inv.purchase_bill_id, user); }
+    return { ok: true };
+  });
+}
+// names of things sold before, for autocomplete
+export async function itemNames() {
+  return (await all(`SELECT name FROM (SELECT COALESCE(i.name, l.description) AS name, MAX(l.id) AS last FROM sales_invoice_lines l
+    LEFT JOIN items i ON i.id=l.item_id JOIN sales_invoices si ON si.id=l.invoice_id WHERE si.is_deleted=0 GROUP BY lower(COALESCE(i.name, l.description))) ORDER BY last DESC LIMIT 200`)).map((r) => r.name);
 }
 
 // ---------------------------------------------------------------------------
@@ -245,7 +275,7 @@ export async function openList(kind) {
         + (SELECT COALESCE(SUM(total),0) FROM stock_returns sr WHERE sr.kind='sales' AND sr.settlement='credit' AND sr.ref_id=si.id AND sr.is_deleted=0) AS paid
       FROM sales_invoices si JOIN parties p ON p.id=si.customer_id WHERE si.is_deleted=0 AND si.state='sent'`)
     : [...await all(`SELECT 'bill' AS type, pi.id, pi.number, pi.date, p.id AS party_id, p.name AS person, pi.total,
-        (SELECT 'Stock: ' || GROUP_CONCAT(COALESCE(i.name, l.description) || ' × ' || (CASE WHEN l.qty = CAST(l.qty AS INTEGER) THEN CAST(l.qty AS INTEGER) ELSE l.qty END), ', ') FROM purchase_invoice_lines l LEFT JOIN items i ON i.id=l.item_id WHERE l.invoice_id=pi.id) AS what,
+        (SELECT 'Bought ' || GROUP_CONCAT(COALESCE(i.name, l.description) || ' × ' || (CASE WHEN l.qty = CAST(l.qty AS INTEGER) THEN CAST(l.qty AS INTEGER) ELSE l.qty END), ', ') FROM purchase_invoice_lines l LEFT JOIN items i ON i.id=l.item_id WHERE l.invoice_id=pi.id) AS what,
         (SELECT COALESCE(SUM(amount),0) FROM payments x WHERE x.ref_type='purchase_invoice' AND x.ref_id=pi.id AND x.is_deleted=0)
         + (SELECT COALESCE(SUM(total),0) FROM stock_returns sr WHERE sr.kind='purchase' AND sr.settlement='credit' AND sr.ref_id=pi.id AND sr.is_deleted=0) AS paid
       FROM purchase_invoices pi JOIN parties p ON p.id=pi.supplier_id WHERE pi.is_deleted=0 AND pi.state='posted'`),
@@ -295,7 +325,7 @@ export async function settle(b, user) {
 // ---------------------------------------------------------------------------
 // Ledgers: everyone you deal with, and the full history with each of them
 // ---------------------------------------------------------------------------
-const HIDDEN = ['walk-in customer'];
+const HIDDEN = ['walk-in customer', GENERAL_SUPPLIER.toLowerCase()];
 export async function people(q = {}) {
   const rows = await all(`SELECT p.id, p.kind, p.name, p.phone,
       COALESCE((SELECT SUM(jl.debit - jl.credit) FROM journal_lines jl JOIN journal_entries je ON je.id=jl.entry_id

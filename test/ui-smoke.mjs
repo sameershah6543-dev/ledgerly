@@ -4,7 +4,7 @@ import puppeteer from 'puppeteer-core';
 import fs from 'node:fs';
 const BASE = process.env.BASE || 'http://localhost:3111';
 const OUT = process.env.SHOTS || 'data/shots'; fs.mkdirSync(OUT, { recursive: true });
-const PAGES = ['dashboard', 'sales', 'expenses', 'inventory', 'owed', 'ledgers', 'ledgers?name=Bilal', 'profit', 'settings', 'more'];
+const PAGES = ['dashboard', 'sales', 'expenses', 'owed', 'ledgers', 'ledgers?name=Bilal', 'profit', 'settings', 'more'];
 const browser = await puppeteer.launch({ executablePath: 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', headless: 'new', args: ['--no-sandbox'] });
 const errors = [];
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -26,7 +26,7 @@ for (const [label, vp] of [['desktop', { width: 1440, height: 900 }], ['phone', 
     console.log(`${errors.length > before || bad ? 'FAIL' : 'ok  '} ${label} ${p}`, errors.slice(before).join(' | '));
   }
   // entry forms
-  for (const [p, btn, name] of [['sales', '[data-new]', 'sale-form'], ['expenses', '[data-new]', 'expense-form'], ['inventory', '[data-restock]', 'stock-form'], ['inventory', '[data-new]', 'product-form']]) {
+  for (const [p, btn, name] of [['sales', '[data-new]', 'sale-form'], ['expenses', '[data-new]', 'expense-form']]) {
     await page.goto(`${BASE}/#/${p}`); await wait(700); await page.click(btn); await wait(700);
     await page.screenshot({ path: `${OUT}/${label}-${name}.png` });
     console.log(`${(await page.$('.modal')) ? 'ok  ' : 'FAIL'} ${label} ${name}`);

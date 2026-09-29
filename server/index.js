@@ -91,6 +91,7 @@ api.post('/simple/settle', wrap((req) => Simple.settle(req.body, uname(req))));
 api.get('/simple/people', wrap((req) => Simple.people(req.query)));
 api.get('/simple/ledger', wrap((req) => Simple.ledger(req.query.name)));
 api.get('/simple/names', wrap(() => Simple.names()));
+api.get('/simple/item-names', wrap(() => Simple.itemNames()));
 api.delete('/simple/money/:type/:id', wrap((req) => Simple.deleteMoney(req.params.type, Number(req.params.id), uname(req))));
 api.post('/simple/clear-all', admin, wrap((req) => { if (req.body.confirm !== 'DELETE') fail('Type DELETE to confirm'); return Simple.clearAllData(); }));
 

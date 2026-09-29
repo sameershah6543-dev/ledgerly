@@ -233,7 +233,7 @@ CREATE TABLE IF NOT EXISTS stock_adjustments(
 export async function ensureSchema() {
   if (!REMOTE) { try { await client.execute('PRAGMA journal_mode=WAL'); } catch { /* not supported */ } }
   await client.executeMultiple(SCHEMA);
-  for (const sql of ['ALTER TABLE sales_invoice_lines ADD COLUMN cost_override REAL']) {
+  for (const sql of ['ALTER TABLE sales_invoice_lines ADD COLUMN cost_override REAL', 'ALTER TABLE sales_invoices ADD COLUMN purchase_bill_id INTEGER']) {
     try { await client.execute(sql); } catch { /* column already exists */ }
   }
 }

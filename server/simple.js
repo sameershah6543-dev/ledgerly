@@ -231,7 +231,8 @@ export async function stockList(q = {}) {
     r.owed = bill ? r2(bill.total - bill.paid) : 0;
     r.paid_at_purchase = bill ? r2(bill.paid_at_purchase) : 0; r.paid_later = bill ? r2(bill.paid - bill.paid_at_purchase) : 0;
     r.account_id = bill?.account_id || null;
-    r.editable = !r.sold && r.bills <= 1; // only a phone that is untouched by sales can be changed or deleted
+    r.editable = !r.sold && r.bills <= 1; // editing needs a single purchase
+    r.deletable = !r.sold; // any phone that hasn't been sold can be deleted
   }
   return { rows, summary: { phones: r2(rows.reduce((a, r) => a + r.qty, 0)), value: r2(rows.reduce((a, r) => a + r.value, 0)), owed: r2(rows.reduce((a, r) => a + r.owed, 0)) } };
 }
@@ -281,8 +282,14 @@ export async function updateStock(itemId, b, user) {
 }
 export async function deleteStock(itemId, user) {
   return await tx(async () => {
-    const r = await editableStock(itemId);
-    if (r.bill_id) { await dropBillPayments(r.bill_id, user); await deleteDoc(docs.bills, r.bill_id, user); }
+    const r = (await stockList()).rows.find((x) => x.id === itemId);
+    if (!r) fail('This phone is not in your inventory any more');
+    if (!r.deletable) fail('Some of these were already sold - delete the sale first');
+    // remove every purchase of this phone (and the money paid for it); refuse if a purchase also holds other items
+    for (const { id } of await all('SELECT DISTINCT pi.id FROM purchase_invoice_lines pl JOIN purchase_invoices pi ON pi.id=pl.invoice_id WHERE pl.item_id=? AND pi.is_deleted=0', itemId)) {
+      if ((await get('SELECT COUNT(*) n FROM purchase_invoice_lines WHERE invoice_id=? AND (item_id IS NULL OR item_id<>?)', id, itemId)).n) fail('This phone was bought together with other items and cannot be deleted here');
+      await dropBillPayments(id, user); await deleteDoc(docs.bills, id, user);
+    }
     await deleteItem(itemId, user); // also removes any opening stock
     return { ok: true };
   });

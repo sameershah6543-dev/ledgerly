@@ -122,6 +122,18 @@ ok((await Simple.stockList()).rows.some((x) => x.id === px.id), 'Deleting the sa
 await Simple.deleteStock(px.id, U);
 await books('sell from inventory');
 
+console.log('\n■ Delete an unsold phone with starting stock and several purchases');
+const cashBefore = await bal(cash);
+const legacy = await Simple.saveProduct({ name: 'Old iPhone 13', purchase_price: 150000, selling_price: 175000, opening_stock: 3 }, null, U);
+await Simple.restock({ item_id: legacy.id, qty: 1, unit_cost: 150000, money_account_id: cash }, U);
+await Simple.restock({ item_id: legacy.id, qty: 1, unit_cost: 150000, money_account_id: cash }, U);
+const lrow = (await Simple.stockList()).rows.find((x) => x.id === legacy.id);
+ok(lrow.qty === 5 && lrow.deletable && !lrow.editable, 'Shows 5 in inventory, deletable (not editable: two purchases)');
+await Simple.deleteStock(legacy.id, U);
+ok(!(await Simple.stockList()).rows.some((x) => x.id === legacy.id), 'Deleted from inventory');
+eq(await bal(cash), cashBefore, 'The 300,000 paid for the two purchases is back in cash');
+await books('delete multi-purchase phone');
+
 console.log('\n■ Cannot delete a phone that was sold');
 const two = await Simple.addStock({ item_name: 'Redmi Note', qty: 2, unit_cost: 40000, cost_account_id: cash }, U);
 await Simple.createSale({ item_id: two.id, qty: 1, unit_price: 46000, money_account_id: cash }, U);

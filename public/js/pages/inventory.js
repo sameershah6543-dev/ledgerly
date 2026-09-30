@@ -14,7 +14,8 @@ export async function inventory(root) {
       ${rows.map((r) => `<tr data-id="${r.id}"><td class="lead strong">${esc(r.name)}<span class="sub">${[r.notes && esc(r.notes), r.owed > 0 ? `<span class="badge low">You owe ${money(r.owed)}</span>` : ''].filter(Boolean).join(' ')}<span class="m-only">${r.notes || r.owed > 0 ? ' · ' : ''}${money(r.cost)}${r.bought_from ? ` from ${esc(r.bought_from)}` : ''}</span></span></td>
         <td class="r hide-m">${qty(r.qty)}</td><td class="r strong hide-m">${money(r.cost)}</td><td class="hide-m">${esc(r.bought_from || '—')}</td><td class="hide-m muted">${fdate(r.bought_on)}</td>
         <td class="r"><div class="row-actions"><button class="btn primary sm" data-sell="${r.id}">Sell</button>
-          ${r.editable ? `<button class="icon-btn" data-edit="${r.id}" title="Edit" aria-label="Edit ${esc(r.name)}">${icon('edit')}</button><button class="icon-btn" data-del="${r.id}" title="Delete" aria-label="Delete ${esc(r.name)}">${icon('trash')}</button>` : ''}</div></td></tr>`).join('')}</tbody></table>`,
+          ${r.editable ? `<button class="icon-btn" data-edit="${r.id}" title="Edit" aria-label="Edit ${esc(r.name)}">${icon('edit')}</button>` : ''}
+          ${r.deletable ? `<button class="icon-btn" data-del="${r.id}" title="Delete" aria-label="Delete ${esc(r.name)}">${icon('trash')}</button>` : ''}</div></td></tr>`).join('')}</tbody></table>`,
     empty: (searching) => emptyState('box', searching ? 'No matching phones' : 'No phones in inventory', searching ? 'Try a different search.' : 'Add phones you’ve bought but not sold yet. Sold phones leave the inventory automatically.', searching ? '' : `<br><button class="btn primary" data-new2>${icon('plus')} Add a phone</button>`),
     bind(r, d) {
       const find = (id) => d.rows.find((x) => String(x.id) === String(id));
